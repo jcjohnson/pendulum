@@ -1,0 +1,31 @@
+<html>
+  <head>
+    <title>
+      Pendulum simulator
+    </title>
+    <link rel="stylesheet" href="lib/bootstrap.min.css">
+    <script src="lib/jquery-1.11.1.min.js"</script>
+    <script src="lib/bootstrap.min.js"></script>
+    <script src="lib/underscore-min.js"></script>
+    <script src="lib/numeric-1.2.6.min.js"></script>
+    <script src="lib/jquery.flot.min.js"></script>
+    <script src="lib/jquery.flot.stack.min.js"></script>
+    <script src="js/pendulum.js"></script>
+    <style>
+      #the-canvas {
+        border-style: solid;
+        border-width: 1px;
+      }
+    </style>
+  </head>
+  <body>
+    <div type='container-fluid'>
+      <div class='row text-center'>
+        <div class='col-md-9'>
+          <canvas id='the-canvas' width="400" height="400"></canvas>
+          <div id='flot-div' style="width:400px;height:400px"></div>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>
