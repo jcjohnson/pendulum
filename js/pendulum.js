@@ -2,9 +2,9 @@ var GRAVITY = 9.81; // meters / second^2
 var DENSITY = 999.97; // kilograms / meter^3
 
 var INTEGRATION_METHODS = {
-  FORWARD_EULER: { name: 'Forward Euler'},
-  SEMI_IMPLICIT_EULER: { name: 'Semi-implicit Euler' },
-  RUNGE_KUTTA: { name: 'Runge-Kutta' },
+  FORWARD_EULER: { names: ['Forward Euler', 'forward'] },
+  SEMI_IMPLICIT_EULER: { names: ['Semi-implicit Euler', 'semi'] },
+  RUNGE_KUTTA: { names: ['Runge-Kutta', 'runge-kutta'] },
 };
 
 // lengths are in meters
@@ -126,12 +126,14 @@ Pendulum.prototype.computeAlphas = function(thetas, omegas, torques) {
 Pendulum.prototype.takeStep = function(dt, torques) {
   this.time += dt;
   if (this.integration_method === INTEGRATION_METHODS.FORWARD_EULER) {
+    // console.log('forward')
     var alphas = this.computeAlphas(this.thetas, this.omegas);
     for (var i = 0; i < alphas.length; i++) {
       this.thetas[i] += this.omegas[i] * dt;
       this.omegas[i] += alphas[i] * dt;
     }
   } else if (this.integration_method === INTEGRATION_METHODS.SEMI_IMPLICIT_EULER) {
+    // console.log('semi');
     var alphas = this.computeAlphas(this.thetas, this.omegas);
     for (var i = 0; i < alphas.length; i++) {
       this.omegas[i] += alphas[i] * dt;
@@ -232,48 +234,91 @@ Pendulum.prototype.draw = function(canvas) {
   });
 };
 
-$(function() {
-  var pendulum = new Pendulum({
-    lengths: [1, 1],
-    masses: [2, 1],
-    thetas: [Math.PI / 2, Math.PI / 2],
-    omegas: [0, 0],
-    integration_method: INTEGRATION_METHODS.RUNGE_KUTTA,
-  });
-  var canvas = $('#the-canvas').get(0);
+var startSimulation = (function() {
+  var intervals = [];
+  return function(options) {
+    _.each(intervals, clearInterval);
+    intervals = [];
+    var pendulum = new Pendulum(options);
+    var canvas = $('#the-canvas').get(0);
 
-  var f_down = false;
-  var j_down = false;
+    var energy_data = [];
+    _.each(_.range(pendulum.dimension), function(i) {
+      energy_data.push({label: 'Kinetic ' + (i + 1), data: []});
+    });
+    _.each(_.range(pendulum.dimension), function(i) {
+      energy_data.push({label: 'Potential ' + (i + 1), data: []});
+    });
+    energy_data.push({label: 'Total energy', data: []});
 
-  var kinetic_data = [];
-  var potential_data = [];
-  _.each(_.range(pendulum.dimension), function(i) {
-    kinetic_data.push({label: 'Kinetic ' + (i + 1), data: []});
-    potential_data.push({label: 'Potential ' + (i + 1), data: []});
-  });
-
-  var flot_options = {
-    series: {stack: true},
-  };
-  function update_energy_data() {
-    var t = pendulum.time;
-    var energy = pendulum.getEnergy();
-    for (var i = 0; i < pendulum.dimension; i++) {
-      kinetic_data[i].data.push([t, energy.kinetic[i]]);
-      potential_data[i].data.push([t, energy.potential[i]]);
+    function update_energy_data() {
+      var t = pendulum.time;
+      var energy = pendulum.getEnergy();
+      var total_energy = 0;
+      for (var i = 0; i < pendulum.dimension; i++) {
+        total_energy += energy.kinetic[i] + energy.potential[i];
+        energy_data[i].data.push([t, energy.kinetic[i]]);
+        energy_data[i + pendulum.dimension].data.push([t, energy.potential[i]]);
+      }
+      energy_data[2 * pendulum.dimension].data.push([t, total_energy]);
     }
+    function draw_energy_plot() {
+      var max_length = 1000;
+      _.each(energy_data, function(series) {
+        if (series.data.length > max_length) {
+          series.data = series.data.slice(series.data.length - max_length);
+        }
+      });
+      var flot_options = {
+        legend: {position: 'nw'},
+      };
+      $.plot('#flot-div', energy_data, flot_options);
+    }
+
+    intervals.push(window.setInterval(function() {
+      pendulum.takeStep(0.005);
+      update_energy_data();
+    }, 5));
+
+    intervals.push(window.setInterval(function() {
+      pendulum.new_draw(canvas);
+    }, 10));
+
+    draw_energy_plot();
+    intervals.push(window.setInterval(draw_energy_plot, 100));
   }
+})();
 
-  window.setInterval(function() {
-    pendulum.takeStep(0.005);
-    update_energy_data();
-  }, 5);
+$(function() {
+  $('#go-btn').click(function() {
+    var options = {
+      lengths: [1],
+      masses: [2],
+      thetas: [Math.PI / 2],
+      omegas: [0],
+      integration_method: INTEGRATION_METHODS.RUNGE_KUTTA,
+    };
+    var pendulum_type = $('#pendulum-type-btns input[type="radio"]:checked').val();
 
-  window.setInterval(function() {
-    pendulum.new_draw(canvas);
-  }, 10);
+    if (pendulum_type === 'single') {
+      // pass 
+    } else if (pendulum_type === 'double') {
+      options.lengths.push(1);
+      options.masses.push(1);
+      options.thetas.push(Math.PI / 2);
+      options.omegas.push(0);
+    }
+    
+    var integration_method = null;
+    if ($('#int-forward').prop('checked')) {
+      integration_method = INTEGRATION_METHODS.FORWARD_EULER;
+    } else if ($('#int-semi').prop('checked')) {
+      integration_method = INTEGRATION_METHODS.SEMI_IMPLICIT_EULER;
+    } else if ($('#int-runge-kutta').prop('checked')) {
+      integration_method = INTEGRATION_METHODS.RUNGE_KUTTA;
+    }
+    options.integration_method = integration_method;
 
-  window.setInterval(function() {
-    $.plot('#flot-div', kinetic_data.concat(potential_data), flot_options);
-  }, 2000);
+    startSimulation(options);
+  });
 });

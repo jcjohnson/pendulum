@@ -4,27 +4,66 @@
       Pendulum simulator
     </title>
     <link rel="stylesheet" href="lib/bootstrap.min.css">
-    <script src="lib/jquery-1.11.1.min.js"</script>
+    <script src="lib/jquery-1.11.1.min.js"></script>
     <script src="lib/bootstrap.min.js"></script>
     <script src="lib/underscore-min.js"></script>
     <script src="lib/numeric-1.2.6.min.js"></script>
     <script src="lib/jquery.flot.min.js"></script>
     <script src="lib/jquery.flot.stack.min.js"></script>
+    <script src="lib/bootstrap-slider.js"></script>
+    <link rel="stylesheet" href="lib/slider.css">
     <script src="js/pendulum.js"></script>
     <style>
       #the-canvas {
         border-style: solid;
         border-width: 1px;
       }
+      #options-panel {
+        padding-top: 10px;
+      }
     </style>
   </head>
   <body>
     <div type='container-fluid'>
       <div class='row text-center'>
-        <div class='col-md-9'>
-          <canvas id='the-canvas' width="400" height="400"></canvas>
-          <div id='flot-div' style="width:400px;height:400px"></div>
+        <div class='col-md-5' id='options-panel'>
+          <h4>Pendulum type</h4>
+          <div class='btn-group' data-toggle='buttons' id='pendulum-type-btns'>
+            <label class='btn btn-sm btn-primary'>
+              <input type='radio' name='pendulum-type' value='single'>
+              Single
+            </label>
+            <label class='btn btn-sm btn-primary active'>
+              <input type='radio' name='pendulum-type' value='double' checked>
+              Double
+            </label>
+          </div>
+
+          <h4>Integrator</h4>
+          <div class='btn-group' data-toggle='buttons' id='integration-btns'>
+            <label class='btn btn-sm btn-primary'>
+              <input type='radio' name='integrator' id='int-forward'>
+              Forward Euler
+            </label>
+            <label class='btn btn-sm btn-primary'>
+              <input type='radio' name='integrator' id='int-semi'>
+              Semi-implicit Euler
+            </label>
+            <label class='btn btn-sm btn-primary active'>
+              <input type='radio' name='integrator' id='int-runge-kutta' checked>
+              Runge-Kutta
+            </label>
+          </div>
+
+          <br>
+          <button class='btn btn-lg btn-success' id='go-btn'>GO!</button>
         </div>
+        <div class='col-md-7'>
+          <canvas id='the-canvas' width="500" height="500"></canvas>
+        </div>
+      </div>
+      <div clas='row'>
+        <div id='flot-div' style="width:100%;height:400px"></div>
       </div>
     </div>
   </body>
