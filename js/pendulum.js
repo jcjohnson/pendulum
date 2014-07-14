@@ -111,10 +111,24 @@ Pendulum.prototype.computeAlphas = function(thetas, omegas, torques) {
     b[1] = m2 * ell1 * ell2 * w1 * w1 * Math.sin(t1 - t2);
     b[1] -= ell2 * m2 * GRAVITY * Math.sin(t2);
 
+    /*
+    // This adds a bit of stiffness
+    b[0] -= 5 * (t1 - t2) / ell1;
+    b[1] += 5 * (t1 - t2) / ell2;
+    */
+
+    /*
     if (_.isArray(torques)) {
-      b[0] += torques[0] * (t1 - t2) / ell1;
-      b[1] -= torques[0] * (t1 - t2) / ell2;
+      var tt1 = t1 % (2 * Math.PI);
+      var tt2 = t2 % (2 * Math.PI);
+      if (tt1 < 0) tt1 += 2 * Math.PI;
+      if (tt2 < 0) tt2 += 2 * Math.PI;
+      b[0] += (t1 - t2 - torques[0]) / ell1;
+      b[1] -= (t1 - t2 - torques[0]) / ell2;
+      // b[0] += torques[0] * (t1 - t2) / ell1;
+      // b[1] -= torques[0] * (t1 - t2) / ell2;
     }
+    */
 
     return numeric.solve(A, b);
   } else {
@@ -127,21 +141,21 @@ Pendulum.prototype.takeStep = function(dt, torques) {
   this.time += dt;
   if (this.integration_method === INTEGRATION_METHODS.FORWARD_EULER) {
     // console.log('forward')
-    var alphas = this.computeAlphas(this.thetas, this.omegas);
+    var alphas = this.computeAlphas(this.thetas, this.omegas, torques);
     for (var i = 0; i < alphas.length; i++) {
       this.thetas[i] += this.omegas[i] * dt;
       this.omegas[i] += alphas[i] * dt;
     }
   } else if (this.integration_method === INTEGRATION_METHODS.SEMI_IMPLICIT_EULER) {
     // console.log('semi');
-    var alphas = this.computeAlphas(this.thetas, this.omegas);
+    var alphas = this.computeAlphas(this.thetas, this.omegas, torques);
     for (var i = 0; i < alphas.length; i++) {
       this.omegas[i] += alphas[i] * dt;
       this.thetas[i] += this.omegas[i] * dt;
     }
   } else if (this.integration_method === INTEGRATION_METHODS.RUNGE_KUTTA) {
     var omegas_k1 = this.omegas.slice(0);
-    var alphas_k1 = this.computeAlphas(this.thetas, this.omegas);
+    var alphas_k1 = this.computeAlphas(this.thetas, this.omegas, torques);
 
     var thetas = [];
     var omegas_k2 = [];
@@ -149,21 +163,21 @@ Pendulum.prototype.takeStep = function(dt, torques) {
       thetas.push(this.thetas[i] + (dt / 2) * omegas_k1[i]);
       omegas_k2.push(this.omegas[i] + (dt / 2) * alphas_k1[i]);
     }
-    var alphas_k2 = this.computeAlphas(thetas, omegas_k2);
+    var alphas_k2 = this.computeAlphas(thetas, omegas_k2, torques);
 
     var omegas_k3 = [];
     for (var i = 0; i < alphas_k2.length; i++) {
       thetas[i] = this.thetas[i] + (dt / 2) * omegas_k2[i];
       omegas_k3.push(this.omegas[i] + (dt / 2) * alphas_k2[i]);
     }
-    var alphas_k3 = this.computeAlphas(thetas, omegas_k3);
+    var alphas_k3 = this.computeAlphas(thetas, omegas_k3, torques);
 
     var omegas_k4 = [];
     for (var i = 0; i < alphas_k3.length; i++) {
       thetas[i] = this.thetas[i] + dt * omegas_k3[i];
       omegas_k4.push(this.omegas[i] + dt * alphas_k3[i]);
     }
-    var alphas_k4 = this.computeAlphas(thetas, omegas_k4);
+    var alphas_k4 = this.computeAlphas(thetas, omegas_k4, torques);
 
     for (var i = 0; i < this.dimension; i++) {
       var theta_step = omegas_k1[i] + 2 * omegas_k2[i] + 2 * omegas_k3[i] + omegas_k4[i];
@@ -276,7 +290,10 @@ var startSimulation = (function() {
     }
 
     intervals.push(window.setInterval(function() {
-      pendulum.takeStep(0.005);
+      var torque = [0];
+      if (f_down) torque[0] += 0.5;
+      if (j_down) torque[0] -= 0.5;
+      pendulum.takeStep(0.005, torque);
       update_energy_data();
     }, 5));
 
@@ -286,14 +303,35 @@ var startSimulation = (function() {
 
     draw_energy_plot();
     intervals.push(window.setInterval(draw_energy_plot, 100));
+
+    var f_down = false;
+    var j_down = false;
+
+    $(document).off('keydown.pendulum');
+    $(document).on('keydown.pendulum', function(e) {
+      if (e.keyCode === 70) {
+        f_down = true;
+      } else if (e.keyCode === 74) {
+        j_down = true;
+      }
+    });
+    $(document).off('keyup.pendulum');
+    $(document).on('keyup.pendulum', function(e) {
+      if (e.keyCode === 70) {
+        f_down = false;
+      } else if (e.keyCode === 74) {
+        j_down = false;
+      }
+      
+    });
   }
 })();
 
 $(function() {
   $('#go-btn').click(function() {
     var options = {
-      lengths: [1],
-      masses: [2],
+      lengths: [1.2],
+      masses: [40],
       thetas: [Math.PI / 2],
       omegas: [0],
       integration_method: INTEGRATION_METHODS.RUNGE_KUTTA,
@@ -303,8 +341,8 @@ $(function() {
     if (pendulum_type === 'single') {
       // pass 
     } else if (pendulum_type === 'double') {
-      options.lengths.push(1);
-      options.masses.push(1);
+      options.lengths.push(0.9);
+      options.masses.push(40);
       options.thetas.push(Math.PI / 2);
       options.omegas.push(0);
     }
