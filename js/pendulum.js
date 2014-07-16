@@ -59,7 +59,7 @@ Pendulum.prototype.getCartesianPositions = function() {
 };
 
 Pendulum.prototype.getCentersOfMass = function() {
-  if (!this.compound) return getCartesianPositions();
+  if (!this.compound) return this.getCartesianPositions();
   var pos = [];
   var sx = 0;
   var sy = 0;
