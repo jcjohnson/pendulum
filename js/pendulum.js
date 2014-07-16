@@ -58,6 +58,23 @@ Pendulum.prototype.getCartesianPositions = function() {
   return pos;
 };
 
+Pendulum.prototype.getCentersOfMass = function() {
+  if (!this.compound) return getCartesianPositions();
+  var pos = [];
+  var sx = 0;
+  var sy = 0;
+  for (var i = 0; i < this.dimension; i++) {
+    var dsx = 0.5 * this.lengths[i] * Math.sin(this.thetas[i]);
+    var dsy = 0.5 * this.lengths[i] * Math.cos(this.thetas[i]);
+    sx += dsx;
+    sy -= dsy;
+    pos.push([sx, sy]);
+    sx += dsx;
+    sy -= dsy;
+  }
+  return pos;
+};
+
 Pendulum.prototype.getCartesianVelocities = function() {
   // TODO: update for compound
   var vel = [];
@@ -101,7 +118,7 @@ Pendulum.prototype.getEnergyNames = function() {
 
 Pendulum.prototype.getEnergy = function() {
   var energy = [];
-  var pos = this.getCartesianPositions();
+  var pos = this.getCentersOfMass();
   var vel = this.getCartesianVelocities();
   var total = 0;
   for (var i = 0; i < this.dimension; i++) {
