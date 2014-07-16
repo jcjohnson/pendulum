@@ -13,7 +13,7 @@ var INTEGRATION_METHODS = {
 // omegas are radians / second
 var Pendulum = function(options) {
   var allowed_options = [
-    'lengths', 'masses', 'thetas', 'omegas', 'integration_method'
+    'lengths', 'masses', 'thetas', 'omegas', 'integration_method', 'compound',
   ];
   _.extend(this, _.pick(options, allowed_options));
   if (_.isUndefined(this.integration_method)) {
@@ -29,8 +29,14 @@ var Pendulum = function(options) {
   this.dimension = this.lengths.length;
 
   this.radii = [];
-  _.each(this.masses, function(m) {
-    this.radii.push(Math.pow( (3 * m) / (4 * Math.PI * DENSITY), 1 / 3));
+  _.each(_.zip(this.masses, this.lengths), function(x) {
+    var m = x[0];
+    var ell = x[1];
+    if (this.compound) {
+      this.radii.push(Math.sqrt(m / (Math.PI * ell * DENSITY)));
+    } else {
+      this.radii.push(Math.pow( (3 * m) / (4 * Math.PI * DENSITY), 1 / 3));
+    }
   }, this);
 
   this.total_length = 0;
@@ -53,27 +59,66 @@ Pendulum.prototype.getCartesianPositions = function() {
 };
 
 Pendulum.prototype.getCartesianVelocities = function() {
+  // TODO: update for compound
   var vel = [];
   var vx = 0;
   var vy = 0;
   for (var i = 0; i < this.dimension; i++) {
-    vx += this.lengths[i] * Math.cos(this.thetas[i]) * this.omegas[i];
-    vy += this.lengths[i] * Math.sin(this.thetas[i]) * this.omegas[i];
+    var dvx = this.lengths[i] * Math.cos(this.thetas[i]) * this.omegas[i];
+    var dvy = this.lengths[i] * Math.sin(this.thetas[i]) * this.omegas[i];
+    if (this.compound) {
+      dvx /= 2;
+      dvy /= 2;
+    }
+    vx += dvx;
+    vy += dvy;
     vel.push([vx, vy]);
+    if (this.compound) {
+      vx += dvx;
+      vy += dvy;
+    }
   }
   return vel;
 };
 
+Pendulum.prototype.getEnergyNames = function() {
+  var range = _.range(this.dimension);
+  var names = [];
+  _.each(range, function(i) {
+    names.push('Kinetic ' + (i + 1));
+  });
+  _.each(range, function(i) {
+    names.push('Potential ' + (i + 1));
+  });
+  if (this.compound) {
+    _.each(range, function(i) {
+      names.push('Angular ' + (i + 1));
+    });
+  }
+  names.push('Total energy');
+  return names;
+};
+
 Pendulum.prototype.getEnergy = function() {
-  var energy = {kinetic: [], potential: []};
+  var energy = [];
   var pos = this.getCartesianPositions();
   var vel = this.getCartesianVelocities();
+  var total = 0;
   for (var i = 0; i < this.dimension; i++) {
     var t = 0.5 * this.masses[i] * (vel[i][0] * vel[i][0] + vel[i][1] * vel[i][1]);
     var u = this.masses[i] * GRAVITY * pos[i][1];
-    energy.kinetic.push(t);
-    energy.potential.push(u);
+    total += t + u;
+    energy.push(t);
+    energy.push(u);
+    if (this.compound) {
+      var len = this.lengths[i];
+      var w = this.omegas[i];
+      var at = (1 / 24) * this.masses[i] * len * len * w * w;
+      total += at;
+      energy.push(at);
+    }
   }
+  energy.push(total);
   return energy;
 };
 
@@ -88,7 +133,11 @@ Pendulum.prototype.getTotalEnergy = function() {
 
 Pendulum.prototype.computeAlphas = function(thetas, omegas, torques) {
   if (this.dimension === 1) {
-    return [-GRAVITY / this.lengths[0] * Math.sin(thetas[0])];
+    if (this.compound) {
+      return [- (3 * GRAVITY) / (2 * this.lengths[0]) * Math.sin(thetas[0])];
+    } else {
+      return [-GRAVITY / this.lengths[0] * Math.sin(thetas[0])];
+    }
   } else if (this.dimension === 2) {
     var m1 = this.masses[0];
     var m2 = this.masses[1];
@@ -102,14 +151,25 @@ Pendulum.prototype.computeAlphas = function(thetas, omegas, torques) {
     var A = [[0, 0], [0, 0]];
     var b = [0, 0];
 
-    A[0][0] = (m1 + m2) * ell1;
-    A[0][1] = m2 * ell2 * Math.cos(t1 - t2);
-    b[0] = -m2 * ell2 * w2 * w2 * Math.sin(t1 - t2);
-    b[0] -= GRAVITY * (m1 + m2) * Math.sin(t1);
-    A[1][0] = m2 * ell1 * Math.cos(t1 - t2);
-    A[1][1] = m2 * ell2;
-    b[1] = m2 * ell1 * ell2 * w1 * w1 * Math.sin(t1 - t2);
-    b[1] -= ell2 * m2 * GRAVITY * Math.sin(t2);
+    if (this.compound) {
+      A[0][0] = (m1 / 3 + m2) * ell1;
+      A[0][1] = 0.5 * m2 * ell2 * Math.cos(t1 - t2);
+      b[0] = -0.5 * m2 * ell2 * w2 * w2 * Math.sin(t1 - t2);
+      b[0] -= (m1 / 2 + m2) * GRAVITY * Math.sin(t1);
+      A[1][0] = 0.5 * m2 * ell1 * Math.cos(t1 - t2);
+      A[1][1] = (1 / 3) * m2 * ell2;
+      b[1] = 0.5 * m2 * ell1 * w1 * w1 * Math.sin(t1 - t2);
+      b[1] -= 0.5 * m2 * GRAVITY * Math.sin(t2);
+    } else {
+      A[0][0] = (m1 + m2) * ell1;
+      A[0][1] = m2 * ell2 * Math.cos(t1 - t2);
+      b[0] = -m2 * ell2 * w2 * w2 * Math.sin(t1 - t2);
+      b[0] -= GRAVITY * (m1 + m2) * Math.sin(t1);
+      A[1][0] = m2 * ell1 * Math.cos(t1 - t2);
+      A[1][1] = m2 * ell2;
+      b[1] = m2 * ell1 * ell2 * w1 * w1 * Math.sin(t1 - t2);
+      b[1] -= ell2 * m2 * GRAVITY * Math.sin(t2);
+    }
 
     /*
     // This adds a bit of stiffness
@@ -188,7 +248,7 @@ Pendulum.prototype.takeStep = function(dt, torques) {
   }
 };
 
-Pendulum.prototype.new_draw = function(canvas) {
+Pendulum.prototype.draw = function(canvas) {
   var ctx = canvas.getContext('2d');
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
@@ -205,10 +265,23 @@ Pendulum.prototype.new_draw = function(canvas) {
     }
     var x1 = canvas.width / 2 + scale * pos[i][0];
     var y1 = canvas.height / 2 - scale * pos[i][1];
+
+    ctx.save();
+    if (this.compound) {
+      ctx.lineWidth = 2 * scale * this.radii[i];
+    }
+
     ctx.beginPath();
     ctx.moveTo(x0, y0);
     ctx.lineTo(x1, y1);
     ctx.stroke();
+    ctx.restore();
+
+    if (this.compound) {
+      ctx.beginPath();
+      ctx.arc(x0, y0, scale * this.radii[i], 0, 2 * Math.PI);
+      ctx.fill();
+    }
 
     ctx.beginPath();
     ctx.arc(x1, y1, scale * this.radii[i], 0, 2 * Math.PI);
@@ -216,37 +289,6 @@ Pendulum.prototype.new_draw = function(canvas) {
   }
 };
 
-// Draw this pendulum onto a canvas.
-Pendulum.prototype.draw = function(canvas) {
-  var ctx = canvas.getContext('2d');
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-  // pixels / meter
-  var scale = 0.5 * Math.min(canvas.width, canvas.height) / this.total_length;
-  
-  var x0 = canvas.width / 2;
-  var y0 = canvas.height / 2;
-  _.each(_.zip(this.lengths, this.masses, this.thetas, this.radii), function(elem, i) {
-    var len = elem[0], mass = elem[1], theta = elem[2], radius = elem[3];
-
-    var x1 = x0 + scale * Math.sin(theta) * len;
-    var y1 = y0 + scale * Math.cos(theta) * len;
-
-    ctx.beginPath();
-    ctx.moveTo(x0, y0);
-    ctx.lineTo(x1, y1);
-    ctx.stroke();
-
-    var cx = x1 + scale * Math.sin(theta) * radius;
-    var cy = y1 + scale * Math.cos(theta) * radius;
-    ctx.beginPath();
-    ctx.arc(x1, y1, scale * radius, 0, 2 * Math.PI);
-    ctx.fill();
-
-    x0 = x1;
-    y0 = y1;
-  });
-};
 
 var startSimulation = (function() {
   var intervals = [];
@@ -257,24 +299,16 @@ var startSimulation = (function() {
     var canvas = $('#the-canvas').get(0);
 
     var energy_data = [];
-    _.each(_.range(pendulum.dimension), function(i) {
-      energy_data.push({label: 'Kinetic ' + (i + 1), data: []});
+    _.each(pendulum.getEnergyNames(), function(name) {
+      energy_data.push({label: name, data: []});
     });
-    _.each(_.range(pendulum.dimension), function(i) {
-      energy_data.push({label: 'Potential ' + (i + 1), data: []});
-    });
-    energy_data.push({label: 'Total energy', data: []});
 
     function update_energy_data() {
       var t = pendulum.time;
       var energy = pendulum.getEnergy();
-      var total_energy = 0;
-      for (var i = 0; i < pendulum.dimension; i++) {
-        total_energy += energy.kinetic[i] + energy.potential[i];
-        energy_data[i].data.push([t, energy.kinetic[i]]);
-        energy_data[i + pendulum.dimension].data.push([t, energy.potential[i]]);
+      for (var i = 0; i < energy.length; i++) {
+        energy_data[i].data.push([t, energy[i]]);
       }
-      energy_data[2 * pendulum.dimension].data.push([t, total_energy]);
     }
     function draw_energy_plot() {
       var max_length = 1000;
@@ -298,7 +332,7 @@ var startSimulation = (function() {
     }, 5));
 
     intervals.push(window.setInterval(function() {
-      pendulum.new_draw(canvas);
+      pendulum.draw(canvas);
     }, 10));
 
     draw_energy_plot();
@@ -335,6 +369,7 @@ $(function() {
       thetas: [Math.PI / 2],
       omegas: [0],
       integration_method: INTEGRATION_METHODS.RUNGE_KUTTA,
+      compound: true,
     };
     var pendulum_type = $('#pendulum-type-btns input[type="radio"]:checked').val();
 
@@ -345,6 +380,12 @@ $(function() {
       options.masses.push(40);
       options.thetas.push(Math.PI / 2);
       options.omegas.push(0);
+    }
+
+    if ($('#simple').prop('checked')) {
+      options.compound = false;
+    } else if ($('#compound').prop('checked')) {
+      options.compound = true;
     }
     
     var integration_method = null;
